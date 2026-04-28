@@ -1,146 +1,142 @@
 import gdown
 from pathlib import Path
-#from ??? import ???
+from typing import Iterable, Optional
+
+from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from typing import Iterable
 
-def download_context_data(pdfs: Iterable[dict[str, str]], path: str = "./context_data") -> None:
-    """
-    Downloads PDFs and stores them in local storage.
-    
-    :param pdfs: an iterable of dictionaries. each dictionary must have
-                 keys of "url" with the URL of the PDF and "filename"
-                 with the name to store the file as.
-    :type pdfs: Iterable[dict[str,str]]
-    :param path: location to store the files (default is "./context_data")
-    :type path: str
-    """
+
+# ==============================
+# DOWNLOAD PDFs
+# ==============================
+def download_context_data(
+    pdfs: Iterable[dict[str, str]],
+    path: str = "./context_data"
+) -> None:
+
     p = Path(path)
     p.mkdir(parents=True, exist_ok=True)
 
     for pdf in pdfs:
-        gdown.download(pdf["url"], f"{path}/{pdf['filename']}", quiet=True)
+        url = pdf["url"]
+        filename = pdf["filename"]
 
+        print(f"Downloading: {filename}")
+        gdown.download(url, str(p / filename), quiet=False)
+
+
+# ==============================
+# LOAD DOCUMENTS
+# ==============================
 def load_context_data(path: str = "./context_data") -> list[Document]:
-    """
-    Loads multiple PDFs into LangChain Document objects.
-    
-    :param path: location of the files (default: "./context_data")
-    :type path: str
-    :return: list of Document objects
-    :rtype: list[Document]
-    """
-#    loader = ???
-#    return ???
-    pass
+    loader = PyPDFDirectoryLoader(path)
+    docs = loader.load()
 
+    if not docs:
+        raise ValueError("No documents found in context_data folder.")
+
+    return docs
+
+
+# ==============================
+# CHUNK DOCUMENTS
+# ==============================
 def chunk_context_data(context_data: list[Document]) -> list[Document]:
-    """
-    Split the context data into overlapping chunks
-    
-    :param context_data: the Documents to split into chunks
-    :type context_data: list[Document]
-    :return: the chunked Documents
-    :rtype: list[Document]
-    """
-#    text_splitter = RecursiveCharacterTextSplitter(
-#        ???,
-#        ???,
-#        ???,
-#        ???
-#    )
 
-#    return ???
-    pass
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+    )
 
-def get_embedding_model(model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> HuggingFaceEmbeddings:
-    """
-    Gets an embedding model for vectorizing the context data.
+    return splitter.split_documents(context_data)
 
-    :param model_name: The name of the embedding model to get (default is sentence-transformers/all-MiniLM-L6-v2)
-    :type model_name: str
-    :return: The embedding model.
-    :rtype: HuggingFaceEmbeddings
-    """
-#    return HuggingFaceEmbeddings(model_name=???)
-    pass
 
-def create_vector_store(chunks: list[Document], embedding_model: Embeddings = get_embedding_model(), path: str = "./chromadb") -> Chroma:
-    """
-    Create a persistent vector store from a list of chunked documents.
-    
-    :param chunks: The context data. If not specified, create an empty vector store.
-    :type chunks: list[Document]
-    :param embedding_model: The embedding model to use (default is the default for get_embedding_model)
-    :type embedding_model: Embeddings
-    :param path: Path to the vector store
-    :type path: str
-    :return: The vector store
-    :rtype: Chroma
-    """
-#    return Chroma???
-#        ???,
-#        ???,
-#        persist_directory=???
-#    )
-    pass
-    
-def get_vector_store(embedding_model: Embeddings = get_embedding_model(), path: str = "./chromadb") -> Chroma:
-    """
-    Gets a persistent vector store.
-    
-    :param embedding_model: The embedding model to use (defaul is to use the default for get_embedding_model)
-    :type embedding_model: Embeddings
-    :param path: path to the vector store
-    :type path: str
-    :return: The vector store
-    :rtype: Chroma
-    """
+# ==============================
+# EMBEDDINGS
+# ==============================
+def get_embedding_model(
+    model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+) -> HuggingFaceEmbeddings:
+
+    return HuggingFaceEmbeddings(model_name=model_name)
+
+
+# ==============================
+# VECTOR STORE (CREATE)
+# ==============================
+def create_vector_store(
+    chunks: list[Document],
+    embedding_model: Optional[Embeddings] = None,
+    path: str = "./chromadb"
+) -> Chroma:
+
+    embedding_model = embedding_model or get_embedding_model()
+
+    vector_store = Chroma.from_documents(
+        documents=chunks,
+        embedding=embedding_model,
+        persist_directory=path,
+    )
+
+    vector_store.persist()  # IMPORTANT FIX
+
+    return vector_store
+
+
+# ==============================
+# VECTOR STORE (LOAD)
+# ==============================
+def get_vector_store(
+    embedding_model: Optional[Embeddings] = None,
+    path: str = "./chromadb"
+) -> Chroma:
+
+    embedding_model = embedding_model or get_embedding_model()
+
     return Chroma(
         persist_directory=path,
-        embedding_function=embedding_model
+        embedding_function=embedding_model,
     )
-    pass
 
+
+# ==============================
+# TEST PIPELINE
+# ==============================
 if __name__ == "__main__":
-    # when run as a script, run some tests to demonstrate capabilities
-#    pdfs = (
-#        { "url": "https://quanticedu.github.io/praxa/Longest Running Shows on Broadway 2025.pdf",
-#          "filename": "Longest Running Shows on Broadway.pdf" },
-#        { "url": "https://quanticedu.github.io/praxa/Every play and musical coming to the West End in 2025.pdf",
-#          "filename": "Every play and musical coming to the West End in 2025.pdf" }
-#    )
-#    download_context_data(pdfs)
-#    context_data = load_context_data()
-#    chunks = chunk_context_data(context_data)
-#    embedding_model = get_embedding_model()
-#    vector_store = create_vector_store(chunks, embedding_model)
 
-#    for page in context_data:
-#        print(page)
+    pdfs = (
+        {
+            "url": "https://quanticedu.github.io/praxa/Longest Running Shows on Broadway 2025.pdf",
+            "filename": "broadway.pdf",
+        },
+        {
+            "url": "https://quanticedu.github.io/praxa/Every play and musical coming to the West End in 2025.pdf",
+            "filename": "west_end.pdf",
+        },
+    )
 
-#    for num, chunk in enumerate(chunks):
-#        print("-----")
-#        print(f"Chunk {num}:")
-#        print(f"Length: {len(chunk.page_content)}")
-#        print(f"Metadata: {chunk.metadata}")
-#        print(f"Content: {chunk.page_content}")
+    download_context_data(pdfs)
 
-#    embedding = embedding_model.embed_query("This is a test sentence.")
-#    print(f"Embedding length: {len(embedding)}")
-#    embedding = embedding_model.embed_query("This is a longer test sentence.")
-#    print(f"Embedding length: {len(embedding)}")
-    
-#    retrieved_chunks = vector_store.similarity_search("A play written by Ryan Calais Cameron.")
-#    print(f"Query retrieved {len(retrieved_chunks)} chunks.")
+    docs = load_context_data()
+    chunks = chunk_context_data(docs)
 
-#    for chunk in retrieved_chunks:
-#        print(f"Chunk content: {chunk.page_content}")
-#        print(f"Chunk metadata: {chunk.metadata}")
-#        print("-----")
+    embedding_model = get_embedding_model()
 
-    pass
+    vector_store = create_vector_store(chunks, embedding_model)
+
+    print(f"Loaded pages: {len(docs)}")
+    print(f"Chunks created: {len(chunks)}")
+
+    results = vector_store.similarity_search(
+        "A play written by Ryan Calais Cameron"
+    )
+
+    print("\nTop Retrieved Chunks:\n")
+
+    for r in results:
+        print(r.page_content[:300])
+        print("-----")
