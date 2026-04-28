@@ -1,87 +1,131 @@
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.runnable import RunnablePassthrough, RunnableParallel
-from langchain_core.documents import Document
-#import ???
+import sys
+import os
 
-#prompt_template = ???([
-#    (???, "You are an assistant providing answers to questions about the theater. In addition to your training data, use the additional context provided below to provide up-to-date information."),
-#    (???, "Question: ???\nContext: ???\nAnswer:")
-#])
+# =========================
+# IMPORT PROJECT MODULES
+# =========================
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-#retriever = ???.as_retriever()
+import context
+import model
+from praxa_model import get_model, SYSTEM_PROMPT
 
-#question_and_docs = RunnableParallel(
-#    { "question": ???,
-#      "context_docs": ??? }
-#)
 
-def make_context_string(dict_with_docs: dict[str, Document]) -> str:
-    """
-    Takes the contents of each Document object in a dictionary and joins them
-    in one string, separated by two newlines
-    
-    :param dict_with_docs: The dictionary with the context docs under the key
-                           "context_docs"
-    :type dict_with_docs: dict[str, Document]
-    :returns: The combined string
-    :rtype: str
-    """
-    return "\n\n".join(doc.page_content for doc in dict_with_docs["context_docs"])
+# =========================
+# RETRIEVER
+# =========================
+retriever = context.get_vector_store().as_retriever()
 
-#context = ???(???=???)
-model = model.get_model()
-#answer_chain = context | prompt_template | model
-#chain_with_sources = ???.assign(???)
+question_and_docs = RunnableParallel({
+    "question": RunnablePassthrough(),
+    "context_docs": retriever
+})
 
+
+# =========================
+# CONTEXT FORMATTER
+# =========================
+def make_context_string(inputs):
+    return "\n\n".join(doc.page_content for doc in inputs["context_docs"])
+
+
+context_chain = RunnablePassthrough.assign(
+    context=make_context_string
+)
+
+
+# =========================
+# MODEL
+# =========================
+llm, use_system_prompt = get_model()
+
+
+# =========================
+# PROMPT TEMPLATE
+# =========================
+if use_system_prompt:
+    prompt_template = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT),
+        ("human", "Question: {question}\n\nContext:\n{context}")
+    ])
+else:
+    prompt_template = ChatPromptTemplate.from_messages([
+        ("human",
+         SYSTEM_PROMPT +
+         "\n\nQuestion: {question}\n\nContext:\n{context}")
+    ])
+
+
+# =========================
+# CHAIN
+# =========================
+answer_chain = context_chain | prompt_template | llm
+
+chain_with_sources = question_and_docs.assign(answer=answer_chain)
+
+
+# =========================
+# MAIN FUNCTION
+# =========================
 def answer_and_sources(question: str) -> dict[str, str]:
-    """
-    Invokes the model with the given question.
-    
-    :param question: The question to ask.
-    :returns: Dictionary with the answer and supporting sources
-    """
+
     result = chain_with_sources.invoke(question)
-    response_text = result["answer"].content
-    sources = "\n\n".join(f"{doc.metadata['source']}, page {doc.metadata['page']}" for doc in result["context_docs"])
-    return {"answer": response_text,
-            "sources": sources}
 
+    # Safe extraction of answer text
+    response_text = getattr(result["answer"], "content", str(result["answer"]))
+
+    # =========================
+    # DEDUP SOURCES (FIXED)
+    # =========================
+    seen = set()
+    unique_docs = []
+
+    for doc in result["context_docs"]:
+        key = (
+            doc.metadata.get("source", "unknown"),
+            doc.metadata.get("page", "unknown")
+        )
+
+        if key not in seen:
+            seen.add(key)
+            unique_docs.append(key)
+
+    # =========================
+    # FORMAT SOURCES
+    # =========================
+    sources_list = [
+        f"[{i+1}] 📄 {src} — page {page}"
+        for i, (src, page) in enumerate(unique_docs)
+    ]
+
+    sources = "\n".join(sources_list)
+
+    return {
+        "answer": response_text,
+        "sources": sources
+    }
+
+
+# =========================
+# TESTING
+# =========================
 if __name__ == "__main__":
-# when run as a script, run some tests to demonstrate capabilities
-#    docs = retriever.invoke("What is Ryan Calais Cameron's most recent play?")
-#    print(f"Found {len(docs)} documents:")
 
-#    for doc in docs:
-#        print("-----")
-#        print(doc)
+    docs = retriever.invoke("What is Ryan Calais Cameron's most recent play?")
+    print(f"Found {len(docs)} documents:\n")
 
-#    print(question_and_docs.invoke("What is Ryan Calais Cameron's most recent play?"))
+    for doc in docs:
+        print("-----")
+        print(doc)
 
-#    my_dict = {
-#        "question": "How much wood would a woodchuck chuck if a woodchuck could chuck wood?",
-#        "answer": "All the wood that a woodchuck could chuck if a woodchuck could chuck wood."
-#    }
+    print("\nFINAL ANSWER TEST:\n")
 
-#    add_length = RunnablePassthrough.assign(length=len)
-#    print(type(add_length))
-#    print(add_length.invoke(my_dict))
+    result = answer_and_sources(
+        "What is Ryan Calais Cameron's most recent play?"
+    )
 
-#    complete_prompt_chain = question_and_docs | context | prompt_template
-#    result = complete_prompt_chain.invoke("What is Ryan Calais Cameron's most recent play?")
-#    print(type(result))
-#    print(result)
-
-#    chain = ??? | ??? | ??? | ???
-#    result = chain.invoke("What is Ryan Calais Cameron's most recent play?")
-#    print(result.content)
-
-#    result = chain_with_sources.invoke("What Broadway shows have had more than 10,000 performances?")
-#    print("The docs used in this answer:")
-#    print("\n".join(doc.metadata.__repr__() for doc in result["context_docs"]))
-#    print("-----")
-#    print("The answer:")
-#    print(result["answer"].content)
-
-#    print(answer_and_sources("What is Ryan Calais Cameron's most recent play?"))
-
-    pass
+    print(result["answer"])
+    print("\nSOURCES:\n")
+    print(result["sources"])
