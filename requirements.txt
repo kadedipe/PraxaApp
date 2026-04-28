@@ -1,10 +1,54 @@
+# =========================
+# Core LangChain Stack
+# =========================
 langchain==0.3.25
+langchain-core==0.3.84
 langchain-community==0.3.24
-pypdf==5.5.0
+langchain-openai==0.3.35
 langchain-text-splitters==0.3.8
-sentence_transformers==4.1.0
 langchain-chroma==0.2.4
 langchain-huggingface==0.2.0
-openai==1.82.0
+
+# =========================
+# LLM & API
+# =========================
+openai==1.109.1
+
+# =========================
+# Vector DB / Embeddings
+# =========================
+chromadb==1.5.8
+sentence-transformers==4.1.0
+
+# =========================
+# ML / NLP Core
+# =========================
+transformers==4.57.6
+huggingface-hub==0.36.2
+torch>=2.0.0
+
+# =========================
+# App Framework
+# =========================
 streamlit==1.45.1
+
+# =========================
+# Document Processing
+# =========================
+pypdf==5.5.0
+
+# =========================
+# Utilities
+# =========================
+python-dotenv>=1.0.0
+requests>=2.31.0
+tqdm>=4.66.0
 gdown==5.2.1
+
+# =========================
+# Data & Science
+# =========================
+numpy>=1.26,<3.0
+pandas>=2.0,<3.0
+scikit-learn>=1.4,<2.0
+scipy>=1.10
