@@ -1,74 +1,47 @@
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from typing import Optional, Any
 import os
+from dotenv import load_dotenv
 
-os.environ["OPENROUTER_API_KEY"] = "<your key here>"
+load_dotenv()
+
+SYSTEM_PROMPT = """
+You are Praxa, an expert theater assistant.
+Answer clearly and cite sources when available.
+"""
+
 
 class ChatModel(ChatOpenAI):
-    """
-    Creates a chat model from openrouter.ai using the OpenAI API
-    """
+
     def __init__(
-            self,
-            model_name: str,
-            openai_api_key: Optional[str] = None,
-            openai_api_base: str="https://openrouter.ai/api/v1",
-            **kwargs: Any):
-        openai_api_key = openai_api_key or os.getenv('OPENROUTER_API_KEY')
+        self,
+        model_name: str,
+        openai_api_key: Optional[str] = None,
+        openai_api_base: str = "https://openrouter.ai/api/v1",
+        **kwargs: Any,
+    ):
+        openai_api_key = openai_api_key or os.getenv("OPENROUTER_API_KEY")
+
+        if not openai_api_key:
+            raise ValueError("OPENROUTER_API_KEY is missing")
+
         super().__init__(
-            openai_api_base=openai_api_base,
+            model=model_name,
             openai_api_key=openai_api_key,
-            model_name=model_name,
-            **kwargs
+            openai_api_base=openai_api_base,
+            temperature=0,
+            max_tokens=512,
+            **kwargs,
         )
 
-def get_model(model_name: str = "<default model>") -> ChatModel:
-    """
-    Gets a reference to a model
-    
-    :param model_name: Name of the model
-    :type model_name: str
-    :return: the model
-    :rtype: ChatModel
-    """
-    return ChatModel(
-        model_name=model_name,
-        max_tokens=512,
-        temperature=0
-    )
 
-if __name__ == "__main__":
-# when run as a script, run some tests to demonstrate capabilities
-#    model = get_model()
-#    from langchain_core.messages import HumanMessage
-#    from langchain.prompts import ChatPromptTemplate
+def get_model(model_name="meta-llama/llama-3.1-8b-instruct"):
 
-#    ???
-#    ???
-#    ???
-#    ???
+    use_system_prompt = True
 
-#    response = model.invoke(
-#        [???("You are a helpful assistant."),
-#         ???("What are some plays by Tawfiq al-Hakim?")])
-#    print(response.content)
-#    print("----------")
-#    response = model.invoke(
-#        [???("You are a helpful assistant."),
-#         ???("What is Ryan Calais Camerons's most recent play?")])
-#    print(response.content)
-#    print("----------")
-#    response = model.invoke(
-#        [???("You are a helpful assistant."),
-#         ???("What Broadway shows have more than 10,000 performances?")])
-#    print(response.content)
+    if "gemma" in model_name.lower():
+        use_system_prompt = False
 
-#    print(prompt_template.invoke({"playwright": "Ryan Calais Cameron"}))
-#    response = model.invoke(prompt_template.invoke({"playwright": "Ryan Calais Cameron"}))
-#    print(response.content)
+    model = ChatModel(model_name=model_name)
 
-#    chain = ???
-#    response = ???{"playwright": "Ryan Calais Cameron"})
-#    print(response.content)
-
-    pass
+    return model, use_system_prompt
