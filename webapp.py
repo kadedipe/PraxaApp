@@ -71,7 +71,9 @@ async def ask(payload: AskRequest) -> dict[str, object]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="The research service is temporarily unavailable.") from exc
+        raise HTTPException(
+            status_code=503, detail="The research service is temporarily unavailable."
+        ) from exc
 
 
 @app.get("/api/search")
@@ -85,4 +87,6 @@ async def search(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="The archive is temporarily unavailable.") from exc
+        raise HTTPException(
+            status_code=503, detail="The archive is temporarily unavailable."
+        ) from exc
