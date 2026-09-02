@@ -1,6 +1,8 @@
 # Runtime dependencies are pinned as one compatible LangChain 0.3 generation.
 --extra-index-url https://download.pytorch.org/whl/cpu
 streamlit==1.45.1
+fastapi==0.115.12
+uvicorn==0.34.3
 langchain==0.3.26
 langchain-core==0.3.84
 langchain-community==0.3.24

@@ -73,6 +73,13 @@ class PraxaRAG:
             logger.warning("primary_model_failed_using_fallback", exc_info=True)
             return get_model(self.settings, self.settings.fallback_model_name).invoke(messages)
 
+    def search_sources(self, query: str, limit: int = 5) -> list[Source]:
+        """Return page-level evidence without invoking the language model."""
+        query = validate_question(query, self.settings.max_question_chars)
+        limit = max(1, min(limit, 10))
+        documents = self.vector_store.similarity_search(query, k=limit)
+        return build_sources(documents)
+
     def answer_and_sources(self, question: str) -> dict[str, object]:
         started = time.perf_counter()
         question = validate_question(question, self.settings.max_question_chars)

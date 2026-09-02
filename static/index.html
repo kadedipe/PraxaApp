@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Praxa is a WebMCP-native, citation-grounded theatre research assistant.">
+    <title>Praxa — WebMCP Theatre Research</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Praxa home"><span>P</span> PRAXA</a>
+      <div id="mcp-status" class="status" role="status">Checking WebMCP…</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Theatre intelligence · grounded in source documents</p>
+        <h1>Research theatre with an <em>agent at your side.</em></h1>
+        <p class="lede">Ask about Broadway and the West End. Praxa retrieves the evidence, answers concisely, and cites the exact PDF page—whether the request comes from you or a WebMCP agent.</p>
+        <div class="tool-list" aria-label="Available WebMCP tools">
+          <span>ask_theatre</span><span>search_theatre_archive</span><span>compare_productions</span>
+        </div>
+      </section>
+
+      <section class="workspace" aria-label="Praxa research workspace">
+        <div class="prompt-panel">
+          <div>
+            <p class="section-label">Human + agent workspace</p>
+            <h2>What do you want to discover?</h2>
+          </div>
+          <form id="ask-form">
+            <label for="question" class="sr-only">Theatre research question</label>
+            <textarea id="question" maxlength="2000" required placeholder="What is Ryan Calais Cameron's most recent play?"></textarea>
+            <div class="form-footer">
+              <span id="request-status" aria-live="polite">Ready</span>
+              <button type="submit">Research <span aria-hidden="true">→</span></button>
+            </div>
+          </form>
+          <div class="examples">
+            <button type="button" data-question="Which shows are the longest-running on Broadway?">Longest-running Broadway shows</button>
+            <button type="button" data-question="What new plays are coming to the West End in 2025?">West End plays in 2025</button>
+          </div>
+        </div>
+
+        <article id="result" class="result-panel" aria-live="polite">
+          <div class="empty-state">
+            <span class="curtain">P</span>
+            <h2>Evidence, not guesswork.</h2>
+            <p>Your grounded answer and page-level citations will appear here. An agent calling a WebMCP tool updates this same workspace.</p>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <span>Praxa WebMCP Research</span>
+      <span>Built for The WebMCP Challenge · 2026</span>
+    </footer>
+  </body>
+</html>
