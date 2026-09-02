@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.documents import Document
 
-from praxa_rag import build_sources, validate_question
+from praxa_rag import Source, build_sources, is_valid_grounded_answer, validate_question
 
 
 def test_validate_question_normalizes_whitespace():
@@ -24,3 +24,17 @@ def test_build_sources_deduplicates_and_converts_zero_based_pages():
     assert len(sources) == 1
     assert sources[0].name == "show.pdf"
     assert sources[0].page == 1
+
+
+def test_grounded_answer_quality_gate_rejects_metadata_and_missing_citations():
+    sources = [Source(citation=1, name="shows.pdf", page=3, excerpt="Evidence")]
+    assert is_valid_grounded_answer("Retrograde opens at the Apollo [1].", sources)
+    assert not is_valid_grounded_answer("User Safety: safe", sources)
+    assert not is_valid_grounded_answer("Retrograde opens at the Apollo.", sources)
+
+
+def test_grounded_answer_quality_gate_allows_explicit_abstention():
+    sources = [Source(citation=1, name="shows.pdf", page=3, excerpt="Evidence")]
+    assert is_valid_grounded_answer(
+        "I could not find this in the theatre sources.", sources
+    )

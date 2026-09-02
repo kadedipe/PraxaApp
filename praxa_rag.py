@@ -35,6 +35,17 @@ def validate_question(question: str, max_chars: int) -> str:
     return cleaned
 
 
+def is_valid_grounded_answer(answer: str, sources: list[Source]) -> bool:
+    """Reject provider metadata and uncited claims before they reach users."""
+    normalized = answer.strip().lower()
+    invalid_prefixes = ("user safety:", "assistant analysis:", "reasoning:")
+    if not normalized or normalized.startswith(invalid_prefixes):
+        return False
+    if sources and answer != "I could not find this in the theatre sources.":
+        return bool(re.search(r"\[\d+\]", answer))
+    return True
+
+
 def build_sources(documents: list[Document]) -> list[Source]:
     sources: list[Source] = []
     seen: set[tuple[str, object]] = set()
@@ -91,14 +102,33 @@ class PraxaRAG:
                 "sources": [],
                 "latency_ms": 0,
             }
-        excerpts = "\n\n".join(f"[{i}] {doc.page_content}" for i, doc in enumerate(documents, 1))
-        response = self._invoke(
-            [
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=f"Question: {question}\n\nExcerpts:\n{excerpts}"),
-            ]
+        excerpts = "\n\n".join(
+            f"[{source.citation}] {source.name}, page {source.page}: {source.excerpt}"
+            for source in sources
         )
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=f"Question: {question}\n\nExcerpts:\n{excerpts}"),
+        ]
+        response = self._invoke(messages)
         answer = getattr(response, "content", str(response)).strip()
+        if not is_valid_grounded_answer(answer, sources):
+            logger.warning("invalid_model_output_retrying")
+            response = self._invoke(
+                messages
+                + [
+                    HumanMessage(
+                        content=(
+                            "Return the final theatre answer now. Include at least one valid "
+                            "citation label from the supplied excerpts and no safety metadata."
+                        )
+                    )
+                ]
+            )
+            answer = getattr(response, "content", str(response)).strip()
+        if not is_valid_grounded_answer(answer, sources):
+            logger.error("invalid_model_output_abstaining")
+            answer = "I could not find this in the theatre sources."
         latency_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "rag_request_complete", extra={"latency_ms": latency_ms, "sources": len(sources)}
