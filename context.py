@@ -1,142 +1,88 @@
-import gdown
-from pathlib import Path
-from typing import Iterable, Optional
+"""Document ingestion and persistent retrieval infrastructure."""
 
+from __future__ import annotations
+
+import logging
+from collections.abc import Iterable
+from pathlib import Path
+
+import gdown
+from langchain_chroma import Chroma
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+logger = logging.getLogger(__name__)
+DEFAULT_DOCUMENTS = (
+    {
+        "url": "https://quanticedu.github.io/praxa/Longest Running Shows on Broadway 2025.pdf",
+        "filename": "broadway.pdf",
+    },
+    {
+        "url": (
+            "https://quanticedu.github.io/praxa/"
+            "Every play and musical coming to the West End in 2025.pdf"
+        ),
+        "filename": "west_end.pdf",
+    },
+)
 
 
-# ==============================
-# DOWNLOAD PDFs
-# ==============================
-def download_context_data(
-    pdfs: Iterable[dict[str, str]],
-    path: str = "./context_data"
-) -> None:
-
-    p = Path(path)
-    p.mkdir(parents=True, exist_ok=True)
-
+def download_context_data(pdfs: Iterable[dict[str, str]], path: str | Path) -> None:
+    destination = Path(path)
+    destination.mkdir(parents=True, exist_ok=True)
     for pdf in pdfs:
-        url = pdf["url"]
-        filename = pdf["filename"]
+        target = destination / pdf["filename"]
+        if target.exists() and target.stat().st_size > 0:
+            continue
+        logger.info("downloading_context_document", extra={"filename": target.name})
+        result = gdown.download(pdf["url"], str(target), quiet=True)
+        if not result or not target.exists():
+            raise RuntimeError(f"Failed to download {target.name}")
 
-        print(f"Downloading: {filename}")
-        gdown.download(url, str(p / filename), quiet=False)
 
-
-# ==============================
-# LOAD DOCUMENTS
-# ==============================
-def load_context_data(path: str = "./context_data") -> list[Document]:
-    loader = PyPDFDirectoryLoader(path)
-    docs = loader.load()
-
+def load_context_data(path: str | Path) -> list[Document]:
+    docs = PyPDFDirectoryLoader(str(path)).load()
     if not docs:
-        raise ValueError("No documents found in context_data folder.")
-
+        raise ValueError("No PDF documents were found in the context directory")
     return docs
 
 
-# ==============================
-# CHUNK DOCUMENTS
-# ==============================
 def chunk_context_data(context_data: list[Document]) -> list[Document]:
-
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=900, chunk_overlap=150, add_start_index=True
     )
-
     return splitter.split_documents(context_data)
 
 
-# ==============================
-# EMBEDDINGS
-# ==============================
-def get_embedding_model(
-    model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
-) -> HuggingFaceEmbeddings:
-
-    return HuggingFaceEmbeddings(model_name=model_name)
+def get_embedding_model() -> HuggingFaceEmbeddings:
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
 
-# ==============================
-# VECTOR STORE (CREATE)
-# ==============================
-def create_vector_store(
-    chunks: list[Document],
-    embedding_model: Optional[Embeddings] = None,
-    path: str = "./chromadb"
+def get_or_create_vector_store(
+    context_path: str | Path,
+    vector_path: str | Path,
+    embedding_model: Embeddings | None = None,
 ) -> Chroma:
-
-    embedding_model = embedding_model or get_embedding_model()
-
-    vector_store = Chroma.from_documents(
-        documents=chunks,
-        embedding=embedding_model,
-        persist_directory=path,
+    """Load the persistent index, bootstrapping it once when empty."""
+    context_dir, vector_dir = Path(context_path), Path(vector_path)
+    context_dir.mkdir(parents=True, exist_ok=True)
+    vector_dir.mkdir(parents=True, exist_ok=True)
+    embeddings = embedding_model or get_embedding_model()
+    store = Chroma(
+        persist_directory=str(vector_dir),
+        embedding_function=embeddings,
+        collection_name="praxa_theatre_v1",
     )
-
-    vector_store.persist()  # IMPORTANT FIX
-
-    return vector_store
-
-
-# ==============================
-# VECTOR STORE (LOAD)
-# ==============================
-def get_vector_store(
-    embedding_model: Optional[Embeddings] = None,
-    path: str = "./chromadb"
-) -> Chroma:
-
-    embedding_model = embedding_model or get_embedding_model()
-
-    return Chroma(
-        persist_directory=path,
-        embedding_function=embedding_model,
-    )
-
-
-# ==============================
-# TEST PIPELINE
-# ==============================
-if __name__ == "__main__":
-
-    pdfs = (
-        {
-            "url": "https://quanticedu.github.io/praxa/Longest Running Shows on Broadway 2025.pdf",
-            "filename": "broadway.pdf",
-        },
-        {
-            "url": "https://quanticedu.github.io/praxa/Every play and musical coming to the West End in 2025.pdf",
-            "filename": "west_end.pdf",
-        },
-    )
-
-    download_context_data(pdfs)
-
-    docs = load_context_data()
-    chunks = chunk_context_data(docs)
-
-    embedding_model = get_embedding_model()
-
-    vector_store = create_vector_store(chunks, embedding_model)
-
-    print(f"Loaded pages: {len(docs)}")
-    print(f"Chunks created: {len(chunks)}")
-
-    results = vector_store.similarity_search(
-        "A play written by Ryan Calais Cameron"
-    )
-
-    print("\nTop Retrieved Chunks:\n")
-
-    for r in results:
-        print(r.page_content[:300])
-        print("-----")
+    if store.get(limit=1).get("ids"):
+        return store
+    download_context_data(DEFAULT_DOCUMENTS, context_dir)
+    chunks = chunk_context_data(load_context_data(context_dir))
+    logger.info("building_vector_index", extra={"chunks": len(chunks)})
+    store.add_documents(chunks)
+    return store

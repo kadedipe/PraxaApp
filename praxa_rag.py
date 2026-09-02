@@ -1,131 +1,109 @@
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema.runnable import RunnablePassthrough, RunnableParallel
-import sys
-import os
+"""Grounded retrieval-augmented generation service."""
 
-# =========================
-# IMPORT PROJECT MODULES
-# =========================
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from __future__ import annotations
+
+import logging
+import re
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage, SystemMessage
 
 import context
-import model
-from praxa_model import get_model, SYSTEM_PROMPT
+from config import Settings
+from praxa_model import SYSTEM_PROMPT, get_model
+
+logger = logging.getLogger(__name__)
 
 
-# =========================
-# RETRIEVER
-# =========================
-retriever = context.get_vector_store().as_retriever()
-
-question_and_docs = RunnableParallel({
-    "question": RunnablePassthrough(),
-    "context_docs": retriever
-})
+@dataclass(frozen=True)
+class Source:
+    citation: int
+    name: str
+    page: int | str
+    excerpt: str
 
 
-# =========================
-# CONTEXT FORMATTER
-# =========================
-def make_context_string(inputs):
-    return "\n\n".join(doc.page_content for doc in inputs["context_docs"])
+def validate_question(question: str, max_chars: int) -> str:
+    cleaned = re.sub(r"\s+", " ", question).strip()
+    if not cleaned:
+        raise ValueError("Please enter a question.")
+    if len(cleaned) > max_chars:
+        raise ValueError(f"Question must be {max_chars:,} characters or fewer.")
+    return cleaned
 
 
-context_chain = RunnablePassthrough.assign(
-    context=make_context_string
-)
+def build_sources(documents: list[Document]) -> list[Source]:
+    sources: list[Source] = []
+    seen: set[tuple[str, object]] = set()
+    for document in documents:
+        raw_page = document.metadata.get("page", "unknown")
+        page = raw_page + 1 if isinstance(raw_page, int) else raw_page
+        name = Path(str(document.metadata.get("source") or "Theatre source")).name.replace("_", " ")
+        key = (name, page)
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append(
+            Source(
+                len(sources) + 1,
+                name,
+                page,
+                re.sub(r"\s+", " ", document.page_content).strip()[:500],
+            )
+        )
+    return sources
 
 
-# =========================
-# MODEL
-# =========================
-llm, use_system_prompt = get_model()
-
-
-# =========================
-# PROMPT TEMPLATE
-# =========================
-if use_system_prompt:
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        ("human", "Question: {question}\n\nContext:\n{context}")
-    ])
-else:
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("human",
-         SYSTEM_PROMPT +
-         "\n\nQuestion: {question}\n\nContext:\n{context}")
-    ])
-
-
-# =========================
-# CHAIN
-# =========================
-answer_chain = context_chain | prompt_template | llm
-
-chain_with_sources = question_and_docs.assign(answer=answer_chain)
-
-
-# =========================
-# MAIN FUNCTION
-# =========================
-def answer_and_sources(question: str) -> dict[str, str]:
-
-    result = chain_with_sources.invoke(question)
-
-    # Safe extraction of answer text
-    response_text = getattr(result["answer"], "content", str(result["answer"]))
-
-    # =========================
-    # DEDUP SOURCES (FIXED)
-    # =========================
-    seen = set()
-    unique_docs = []
-
-    for doc in result["context_docs"]:
-        key = (
-            doc.metadata.get("source", "unknown"),
-            doc.metadata.get("page", "unknown")
+class PraxaRAG:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings or Settings.from_env()
+        self.vector_store = context.get_or_create_vector_store(
+            self.settings.context_data_path, self.settings.vector_store_path
         )
 
-        if key not in seen:
-            seen.add(key)
-            unique_docs.append(key)
+    def _invoke(self, messages: list[object]):
+        try:
+            return get_model(self.settings).invoke(messages)
+        except Exception:
+            if not self.settings.fallback_model_name:
+                raise
+            logger.warning("primary_model_failed_using_fallback", exc_info=True)
+            return get_model(self.settings, self.settings.fallback_model_name).invoke(messages)
 
-    # =========================
-    # FORMAT SOURCES
-    # =========================
-    sources_list = [
-        f"[{i+1}] 📄 {src} — page {page}"
-        for i, (src, page) in enumerate(unique_docs)
-    ]
+    def answer_and_sources(self, question: str) -> dict[str, object]:
+        started = time.perf_counter()
+        question = validate_question(question, self.settings.max_question_chars)
+        documents = self.vector_store.similarity_search(question, k=self.settings.retrieval_k)
+        sources = build_sources(documents)
+        if not sources:
+            return {
+                "answer": "I could not find this in the theatre sources.",
+                "sources": [],
+                "latency_ms": 0,
+            }
+        excerpts = "\n\n".join(f"[{i}] {doc.page_content}" for i, doc in enumerate(documents, 1))
+        response = self._invoke(
+            [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=f"Question: {question}\n\nExcerpts:\n{excerpts}"),
+            ]
+        )
+        answer = getattr(response, "content", str(response)).strip()
+        latency_ms = round((time.perf_counter() - started) * 1000)
+        logger.info(
+            "rag_request_complete", extra={"latency_ms": latency_ms, "sources": len(sources)}
+        )
+        return {"answer": answer, "sources": sources, "latency_ms": latency_ms}
 
-    sources = "\n".join(sources_list)
 
-    return {
-        "answer": response_text,
-        "sources": sources
-    }
+_service: PraxaRAG | None = None
 
 
-# =========================
-# TESTING
-# =========================
-if __name__ == "__main__":
-
-    docs = retriever.invoke("What is Ryan Calais Cameron's most recent play?")
-    print(f"Found {len(docs)} documents:\n")
-
-    for doc in docs:
-        print("-----")
-        print(doc)
-
-    print("\nFINAL ANSWER TEST:\n")
-
-    result = answer_and_sources(
-        "What is Ryan Calais Cameron's most recent play?"
-    )
-
-    print(result["answer"])
-    print("\nSOURCES:\n")
-    print(result["sources"])
+def answer_and_sources(question: str) -> dict[str, object]:
+    global _service
+    if _service is None:
+        _service = PraxaRAG()
+    return _service.answer_and_sources(question)
