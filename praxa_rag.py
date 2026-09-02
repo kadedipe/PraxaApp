@@ -42,7 +42,7 @@ def is_valid_grounded_answer(answer: str, sources: list[Source]) -> bool:
     if not normalized or normalized.startswith(invalid_prefixes):
         return False
     if sources and answer != "I could not find this in the theatre sources.":
-        return bool(re.search(r"\\[\\d+\\]", answer))
+        return bool(re.search(r"\[\d+\]", answer))
     return True
 
 
