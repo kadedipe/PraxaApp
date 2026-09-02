@@ -37,7 +37,10 @@ def download_context_data(pdfs: Iterable[dict[str, str]], path: str | Path) -> N
         target = destination / pdf["filename"]
         if target.exists() and target.stat().st_size > 0:
             continue
-        logger.info("downloading_context_document", extra={"filename": target.name})
+        logger.info(
+            "downloading_context_document",
+            extra={"document_filename": target.name},
+        )
         result = gdown.download(pdf["url"], str(target), quiet=True)
         if not result or not target.exists():
             raise RuntimeError(f"Failed to download {target.name}")
