@@ -20,5 +20,5 @@ jobs:
           cache: pip
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
-      - run: pytest --cov=config --cov=praxa_rag --cov-report=term-missing --cov-fail-under=50
+      - run: python -m pytest --cov=config --cov=praxa_rag --cov-report=term-missing --cov-fail-under=50
       - run: docker build -t praxa-app:test .
